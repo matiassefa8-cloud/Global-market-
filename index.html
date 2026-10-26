@@ -1,5 +1,5 @@
 
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -11,11 +11,11 @@ body{margin:0;font-family:Arial,sans-serif;background:#f2f5f9;color:#222}
 header{background:#123c69;color:white;padding:22px;text-align:center}
 main{max-width:850px;margin:20px auto;padding:15px}
 section{background:white;padding:18px;margin-bottom:18px;border-radius:10px}
-input,button{width:100%;padding:12px;margin:7px 0;border-radius:6px;border:1px solid #ccc;font-size:16px}
+input,select,button{width:100%;padding:12px;margin:7px 0;border-radius:6px;border:1px solid #ccc;font-size:16px}
 button{background:#123c69;color:white;border:0;cursor:pointer}
 .product{border-bottom:1px solid #ddd;padding:12px 0}
 .price{color:#167344;font-weight:bold}
-small{color:#555}
+.note{background:#fff4d6;padding:12px;border-radius:6px}
 </style>
 </head>
 <body>
@@ -33,26 +33,42 @@ small{color:#555}
 <h2>Sell a product</h2>
 <form id="productForm">
 <input id="name" placeholder="Product name" required>
-<input id="price" type="number" min="0.01" step="0.01" placeholder="Price" required>
-<button type="submit">Add product</button>
+<input id="seller" placeholder="Seller name" required>
+<input id="location" placeholder="Seller country or city" required>
+<input id="price" type="number" min="0.01" step="0.01" placeholder="Product price" required>
+<select id="currency">
+<option value="USD">USD ($)</option>
+<option value="EUR">EUR (€)</option>
+</select>
+<label>Product photo</label>
+<input id="photo" type="file" accept="image/*" required>
+<div class="note">
+<strong>Listing fee: $5</strong>
+<p>Do not pay until the payment process is properly connected.</p>
+</div>
+<input id="reference" placeholder="Payment transaction reference" required>
+<label>Payment receipt photo</label>
+<input id="receipt" type="file" accept="image/*" required>
+<button type="submit">Submit product for review</button>
 <p id="message"></p>
 </form>
 </section>
 </main>
 <script>
 const SUPABASE_URL='https://cnygdhpbuqopmnbfkzmd.supabase.co';
-let allProducts=[];const SUPABASE_KEY='sb_publishable_RiQYt-kRIEHha2VmyZ7y1g_l-eBCgtP';
+const SUPABASE_KEY='sb_publishable_RiQYt-kRIEHha2VmyZ7y1g_l-eBCgtP';
+let allProducts=[];
 
 async function loadProducts(){
 try{
 const r=await fetch(SUPABASE_URL+'/rest/v1/products?select=id,name,price&order=id.desc',{
 headers:{apikey:SUPABASE_KEY,Authorization:'Bearer '+SUPABASE_KEY}
 });
-if(!r.ok)throw Error('Could not load products');
+if(!r.ok)throw Error('Load failed');
 allProducts=await r.json();
 showProducts();
 }catch(e){
-document.getElementById('products').textContent='Products will appear here when database access is configured.';
+document.getElementById('products').textContent='Could not load products. Please try again later.';
 }
 }
 
@@ -72,40 +88,16 @@ const name=document.createElement('strong');
 name.textContent=p.name;
 const price=document.createElement('p');
 price.className='price';
-price.textContent='$'+Number(p.price).toFixed(2);
+price.textContent=Number(p.price).toFixed(2);
 item.append(name,price);
 list.appendChild(item);
 });
 }
 
-document.getElementById('productForm').addEventListener('submit',async function(e){
+document.getElementById('productForm').addEventListener('submit',function(e){
 e.preventDefault();
-const message=document.getElementById('message');
-const name=document.getElementById('name').value.trim();
-const price=Number(document.getElementById('price').value);
-if(!name||!Number.isFinite(price)||price<=0){
-message.textContent='Enter a product name and a valid price.';
-return;
-}
-message.textContent='Saving product...';
-try{
-const r=await fetch(SUPABASE_URL+'/rest/v1/products',{
-method:'POST',
-headers:{
-'apikey':SUPABASE_KEY,
-'Authorization':'Bearer '+SUPABASE_KEY,
-'Content-Type':'application/json',
-'Prefer':'return=minimal'
-},
-body:JSON.stringify({name:name,price:price})
-});
-if(!r.ok)throw Error('Save failed');
-message.textContent='Product added successfully!';
-this.reset();
-await loadProducts();
-}catch(err){
-message.textContent='Saving failed. The Supabase key or database permissions need setup.';
-}
+document.getElementById('message').textContent=
+'Photo uploads, receipt uploads, payment verification, and publishing are not connected yet. Do not make a payment expecting automatic approval.';
 });
 
 loadProducts();
