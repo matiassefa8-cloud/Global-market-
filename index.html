@@ -1,4 +1,4 @@
-
+HTML
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -14,8 +14,10 @@ section{background:white;padding:18px;margin-bottom:18px;border-radius:10px}
 input,select,button{width:100%;padding:12px;margin:7px 0;border-radius:6px;border:1px solid #ccc;font-size:16px}
 button{background:#123c69;color:white;border:0;cursor:pointer}
 .product{border-bottom:1px solid #ddd;padding:12px 0}
+.product img{max-width:180px;max-height:160px;object-fit:contain;display:block;margin:8px 0}
 .price{color:#167344;font-weight:bold}
 .note{background:#fff4d6;padding:12px;border-radius:6px}
+#message{overflow-wrap:anywhere}
 </style>
 </head>
 <body>
@@ -40,35 +42,35 @@ button{background:#123c69;color:white;border:0;cursor:pointer}
 <option value="USD">USD ($)</option>
 <option value="EUR">EUR (€)</option>
 </select>
-<label>Product photo</label>
+<label>Product photo (required)</label>
 <input id="photo" type="file" accept="image/*" required>
 <div class="note">
 <strong>Listing fee: $5</strong>
-<p>Do not pay until the payment process is properly connected.</p>
+<p>Payment is not connected yet. Do not pay. Products will remain pending review.</p>
 </div>
-<input id="reference" placeholder="Payment transaction reference" required>
-<label>Payment receipt photo</label>
-<input id="receipt" type="file" accept="image/*" required>
-<button type="submit">Submit product for review</button>
-<p id="message"></p>
+<button id="submitButton" type="submit">Submit product for review</button>
+<p id="message" role="status"></p>
 </form>
 </section>
 </main>
 <script>
 const SUPABASE_URL='https://cnygdhpbuqopmnbfkzmd.supabase.co';
 const SUPABASE_KEY='sb_publishable_RiQYt-kRIEHha2VmyZ7y1g_l-eBCgtP';
+const STORAGE_BUCKET='Product images';
 let allProducts=[];
 
 async function loadProducts(){
+const list=document.getElementById('products');
 try{
-const r=await fetch(SUPABASE_URL+'/rest/v1/products?select=id,name,price&order=id.desc',{
-headers:{apikey:SUPABASE_KEY,Authorization:'Bearer '+SUPABASE_KEY}
-});
-if(!r.ok)throw Error('Load failed');
+const r=await fetch(
+SUPABASE_URL+'/rest/v1/products?select=id,name,price,currency,image_url,seller_name,seller_location,status&order=id.desc',
+{headers:{apikey:SUPABASE_KEY,Authorization:'Bearer '+SUPABASE_KEY}}
+);
+if(!r.ok)throw Error(await r.text());
 allProducts=await r.json();
 showProducts();
 }catch(e){
-document.getElementById('products').textContent='Could not load products. Please try again later.';
+list.textContent='Could not load products. Check the Supabase connection.';
 }
 }
 
@@ -76,28 +78,94 @@ function showProducts(){
 const term=document.getElementById('search').value.toLowerCase();
 const list=document.getElementById('products');
 list.replaceChildren();
-const matches=allProducts.filter(p=>String(p.name).toLowerCase().includes(term));
+const matches=allProducts.filter(p=>
+String(p.name||'').toLowerCase().includes(term) &&
+(!p.status || p.status==='approved')
+);
 if(!matches.length){
-list.textContent='No products found yet.';
+list.textContent='No approved products found yet.';
 return;
 }
 matches.forEach(p=>{
 const item=document.createElement('div');
 item.className='product';
 const name=document.createElement('strong');
-name.textContent=p.name;
+name.textContent=p.name||'Product';
 const price=document.createElement('p');
 price.className='price';
-price.textContent=Number(p.price).toFixed(2);
+const currency=p.currency||'USD';
+price.textContent=(currency==='EUR'?'€':'$')+Number(p.price||0).toFixed(2);
 item.append(name,price);
-list.appendChild(item);
+if(p.seller_name){
+const seller=document.createElement('p');
+seller.textContent='Seller: '+p.seller_name;
+item.append(seller);
+}
+if(p.seller_location){
+const location=document.createElement('p');
+location.textContent='Location: '+p.seller_location;
+item.append(location);
+}
+if(p.image_url){
+const img=document.createElement('img');
+img.src=p.image_url;
+img.alt=p.name||'Product photo';
+img.loading='lazy';
+item.append(img);
+}
+list.append(item);
 });
 }
 
-document.getElementById('productForm').addEventListener('submit',function(e){
+document.getElementById('productForm').addEventListener('submit',async function(e){
 e.preventDefault();
-document.getElementById('message').textContent=
-'Photo uploads, receipt uploads, payment verification, and publishing are not connected yet. Do not make a payment expecting automatic approval.';
+const message=document.getElementById('message');
+const button=document.getElementById('submitButton');
+const file=document.getElementById('photo').files[0];
+if(!file || !file.type.startsWith('image/')){
+message.textContent='Please choose a product photo.';
+return;
+}
+if(file.size>5*1024*1024){
+message.textContent='Please choose an image smaller than 5 MB.';
+return;
+}
+button.disabled=true;
+message.textContent='Submitting product...';
+try{
+const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+const path=Date.now()+'-'+Math.random().toString(36).slice(2)+'-'+safeName;
+const upload=await fetch(
+SUPABASE_URL+'/storage/v1/object/'+encodeURIComponent(STORAGE_BUCKET)+'/'+path,
+{method:'POST',headers:{apikey:SUPABASE_KEY,Authorization:'Bearer '+SUPABASE_KEY,'Content-Type':file.type,'x-upsert':'false'},body:file}
+);
+if(!upload.ok)throw Error('Photo upload failed: '+await upload.text());
+const imageUrl=SUPABASE_URL+'/storage/v1/object/public/'+encodeURIComponent(STORAGE_BUCKET)+'/'+path;
+const payload={
+name:document.getElementById('name').value.trim(),
+price:Number(document.getElementById('price').value),
+currency:document.getElementById('currency').value,
+image_url:imageUrl,
+seller:document.getElementById('seller').value.trim(),
+seller_name:document.getElementById('seller').value.trim(),
+location:document.getElementById('location').value.trim(),
+seller_location:document.getElementById('location').value.trim(),
+status:'pending'
+};
+const response=await fetch(SUPABASE_URL+'/rest/v1/products',{
+method:'POST',
+headers:{apikey:SUPABASE_KEY,Authorization:'Bearer '+SUPABASE_KEY,'Content-Type':'application/json',Prefer:'return=minimal'},
+body:JSON.stringify(payload)
+});
+if(!response.ok)throw Error('Product save failed: '+await response.text());
+message.textContent='Product submitted for review. Payment has NOT been taken. The listing is pending approval.';
+this.reset();
+await loadProducts();
+}catch(err){
+message.textContent='Could not submit: '+String(err.message||err).slice(0,350)+'. No payment was taken.';
+}finally{
+button.disabled=false;
+}
 });
 
 loadProducts();
